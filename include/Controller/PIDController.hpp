@@ -42,6 +42,13 @@ public:
         this->setpoint = setpoint;
     }
 
+    void setGains(float kp, float ki, float kd)
+    {
+        this->kp = kp;
+        this->ki = ki;
+        this->kd = kd;
+    }
+
 private:
     float kp, ki, kd;
     float setpoint;

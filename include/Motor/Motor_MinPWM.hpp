@@ -22,6 +22,11 @@ public:
         motor->idle();
     }
 
+    void setMinPWM(int minPWM)
+    {
+        this->minPWM = minPWM;
+    }
+
 private:
     void forward(uint8_t speed) override
     {
