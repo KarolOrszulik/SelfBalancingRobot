@@ -19,12 +19,21 @@
     <h1>Self Balancing Robot control</h1>
     
     <section>
-        <h3>PID gains</h3>
-        <p>P: <input type="number" id="kp" placeholder="kp" value="0.5" step="0.01"></p>
-        <p>I: <input type="number" id="ki" placeholder="ki" value="0.1" step="0.01"></p>
-        <p>D: <input type="number" id="kd" placeholder="kd" value="0.1" step="0.01"></p>
-        <button onclick="sendPIDgains()">Send</button>
-        <p>Current PID gains: <span id="currentPID"></span></p>
+        <h3>Motor PID gains</h3>
+        <p>P: <input type="number" id="mp" placeholder="kp" value="0.5" step="0.01"></p>
+        <p>I: <input type="number" id="mi" placeholder="ki" value="0.1" step="0.01"></p>
+        <p>D: <input type="number" id="md" placeholder="kd" value="0.1" step="0.01"></p>
+        <button onclick="sendMotorPidGains()">Send</button>
+        <p>Current PID gains: <span id="currentMotorPid"></span></p>
+    </section>
+
+    <section>
+        <h3>Roll setpoint PID gains</h3>
+        <p>P: <input type="number" id="rp" placeholder="kp" value="0.5" step="0.01"></p>
+        <p>I: <input type="number" id="ri" placeholder="ki" value="0.1" step="0.01"></p>
+        <p>D: <input type="number" id="rd" placeholder="kd" value="0.1" step="0.01"></p>
+        <button onclick="sendRollPidGains()">Send</button>
+        <p>Current PID gains: <span id="currentRollPid"></span></p>
     </section>
 
     <section>
@@ -36,29 +45,36 @@
     </section>
 
     <section>
-        <h3>Setpoint</h3>
-        <p>Setpoint: <input type="number" id="setpoint" placeholder="setpoint" value="0" step="0.001"></p>
-        <button onclick="sendSetpoint()">Send</button>
-        <p>Current setpoint: <span id="currentSetpoint"></span></p>
-    </section>
-
-    <section>
         <h3>Output LPF</h3>
-        <p>Alpha: <input type="number" id="alpha" placeholder="alpha" value="0.9", step="0.01"></p>
-        <button onclick="sendAlpha()">Send</button>
-        <p>Current alpha: <span id="currentAlpha"></span></p>
+        <p>Motor alpha: <input type="number" id="motorAlpha" placeholder="alpha" value="0.1", step="0.01"></p>
+        <p>Roll alpha: <input type="number" id="rollAlpha" placeholder="alpha" value="0.01", step="0.01"></p>
+        <button onclick="sendAlphas()">Send</button>
+        <p>Current alpha: <span id="currentAlphas"></span></p>
     </section>
     
     <script>
-        function sendPIDgains() {
-            var kp = document.getElementById("kp").value;
-            var ki = document.getElementById("ki").value;
-            var kd = document.getElementById("kd").value;
-            fetch(`http://self-balancing-robot.local/settings?p=${kp}&i=${ki}&d=${kd}`)
+        function sendMotorPidGains() {
+            var kp = document.getElementById("mp").value;
+            var ki = document.getElementById("mi").value;
+            var kd = document.getElementById("md").value;
+            fetch(`http://self-balancing-robot.local/settings?mp=${kp}&mi=${ki}&md=${kd}`)
                 .then(response => response.text())
                 .then(data => {
                     console.log(data);
-                    document.getElementById("currentPID").innerText = data;
+                    document.getElementById("currentMotorPid").innerText = data;
+                })
+                .catch(error => console.error(error));
+        }
+
+        function sendRollPidGains() {
+            var kp = document.getElementById("rp").value;
+            var ki = document.getElementById("ri").value;
+            var kd = document.getElementById("rd").value;
+            fetch(`http://self-balancing-robot.local/settings?rp=${kp}&ri=${ki}&rd=${kd}`)
+                .then(response => response.text())
+                .then(data => {
+                    console.log(data);
+                    document.getElementById("currentMotorPid").innerText = data;
                 })
                 .catch(error => console.error(error));
         }
@@ -75,24 +91,14 @@
                 .catch(error => console.error(error));
         }
 
-        function sendSetpoint() {
-            var setpoint = document.getElementById("setpoint").value;
-            fetch(`http://self-balancing-robot.local/settings?setpoint=${setpoint}`)
+        function sendAlphas() {
+            var mAlpha = document.getElementById("motorAlpha").value;
+            var rAlpha = document.getElementById("rollAlpha").value;
+            fetch(`http://self-balancing-robot.local/settings?malpha=${mAlpha}&ralpha=${rAlpha}`)
                 .then(response => response.text())
                 .then(data => {
                     console.log(data);
-                    document.getElementById("currentSetpoint").innerText = data;
-                })
-                .catch(error => console.error(error));
-        }
-
-        function sendAlpha() {
-            var alpha = document.getElementById("alpha").value;
-            fetch(`http://self-balancing-robot.local/settings?alpha=${alpha}`)
-                .then(response => response.text())
-                .then(data => {
-                    console.log(data);
-                    document.getElementById("currentAlpha").innerText = data;
+                    document.getElementById("currentAlphas").innerText = data;
                 })
                 .catch(error => console.error(error));
         }

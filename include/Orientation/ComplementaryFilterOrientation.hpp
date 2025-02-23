@@ -13,7 +13,7 @@ public:
     void update() override
     {
         const uint32_t now = millis();
-        const float dt = lastUpdate == 0 ? 0.f : (now - lastUpdate) / 1000.f;
+        const float dt = (lastUpdate == 0) ? (0.f) : ((now - lastUpdate) / 1000.f);
         lastUpdate = now;
 
         IMUData imuData = imu->getData();

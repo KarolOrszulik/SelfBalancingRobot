@@ -2,8 +2,8 @@
 
 struct IMUData
 {
-    float accelX, accelY, accelZ;
-    float pitchRate, rollRate, yawRate;
+    float accelX = 0.f, accelY = 0.f, accelZ = 0.f;
+    float pitchRate = 0.f, rollRate = 0.f, yawRate = 0.f;
 };
 
 class IIMU

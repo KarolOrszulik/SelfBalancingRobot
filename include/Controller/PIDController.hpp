@@ -25,7 +25,7 @@ public:
 
         const float pOut = kp * error;
 
-        integral += 0.5f * ki * (error + lastError) * dt;
+        integral += ki * error * dt;
         float minLimit = (-1.f < pOut) ? -1.f - pOut : 0.f;
         float maxLimit = (1.f > pOut) ? 1.f - pOut : 0.f;
         integral = constrain(integral, minLimit, maxLimit);
@@ -33,7 +33,6 @@ public:
 
         const float dOut = kd * derivative;
 
-        lastError = error;
         return constrain(pOut + iOut + dOut, -1.f, 1.f);
     }
 
@@ -51,8 +50,8 @@ public:
 
 private:
     float kp, ki, kd;
-    float setpoint;
+    float setpoint = 0;
     float integral = 0;
-    float lastError = 0;
+    float lastMeasurement = 0;
     uint32_t lastUpdate = 0;
 };

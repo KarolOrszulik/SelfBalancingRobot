@@ -4,8 +4,8 @@
 
 struct OrientationData
 {
-    float pitch, roll;
-    float pitchRate, rollRate;
+    float pitch = 0.f, roll = 0.f;
+    float pitchRate = 0.f, rollRate = 0.f;
 };
 
 class IOrientation

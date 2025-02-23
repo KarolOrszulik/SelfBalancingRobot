@@ -20,7 +20,8 @@ static IMotor* motorR;
 static IIMU* imu;
 static IOrientation* orientation;
 
-static IController* controller;
+static IController* motorController;
+static IController* rollSetpointController;
 
 static volatile bool shouldUpdate = false;
 
@@ -30,13 +31,21 @@ static WiFiUDP udp;
 
 struct RobotSettings
 {
-    float p;
-    float i;
-    float d;
+    struct PidGains
+    {
+        float p;
+        float i;
+        float d;
+    };
+
+    PidGains kMotor;
+    PidGains kRoll;
+
     int lmin;
     int rmin;
-    float setpoint;
-    float alpha;
+
+    float motorAlpha;
+    float rollAlpha;
 };
 
 static RobotSettings robotSettings;
@@ -77,10 +86,16 @@ void createUpdateInterrupt()
     timerAlarmEnable(timer);
 }
 
-void createController()
+void createMotorController()
 {
-    controller = new PIDController(robotSettings.p, robotSettings.i, robotSettings.d);
-    controller->setSetpoint(robotSettings.setpoint);
+    motorController = new PIDController(robotSettings.kMotor.p, robotSettings.kMotor.i, robotSettings.kMotor.d);
+    motorController->setSetpoint(0.f);
+}
+
+void createRollSetpointController()
+{
+    rollSetpointController = new PIDController(robotSettings.kRoll.p, robotSettings.kRoll.i, robotSettings.kRoll.d);
+    rollSetpointController->setSetpoint(0.f);
 }
 
 void loadSettingsFromFlash()
@@ -102,8 +117,8 @@ void applyAllSettings()
 {
     ((Motor_MinPWM*)motorL)->setMinPWM(robotSettings.lmin);
     ((Motor_MinPWM*)motorR)->setMinPWM(robotSettings.rmin);
-    ((PIDController*)controller)->setGains(robotSettings.p, robotSettings.i, robotSettings.d);
-    ((PIDController*)controller)->setSetpoint(robotSettings.setpoint);
+    ((PIDController*)rollSetpointController)->setGains(robotSettings.kRoll.p, robotSettings.kRoll.i, robotSettings.kRoll.d);
+    ((PIDController*)motorController)->setGains(robotSettings.kMotor.p, robotSettings.kMotor.i, robotSettings.kMotor.d);
 }
 
 void setup()
@@ -116,7 +131,8 @@ void setup()
     createIMU();
     createOrientation();
     createUpdateInterrupt();
-    createController();
+    createMotorController();
+    createRollSetpointController();
 
     WiFi.begin(WIFI_SSID, WIFI_PASS);
     Serial.printf("Connecting to WiFi %s", WIFI_SSID);
@@ -137,15 +153,12 @@ void setup()
     });
 
     server.on("/getSettings", HTTP_GET, [] {
-        String message =
-              "p=" + String(robotSettings.p) +
-            + "i=" + String(robotSettings.i) +
-            + "d=" + String(robotSettings.d) +
-            + "lmin=" + String(robotSettings.lmin) +
-            + "rmin=" + String(robotSettings.rmin) +
-            + "setpoint=" + String(robotSettings.setpoint) +
-            + "alpha=" + String(robotSettings.alpha);
-
+        String message = "Settings:\n";
+        message += "Motor PID gains: kp=" + String(robotSettings.kMotor.p) + ", ki=" + String(robotSettings.kMotor.i) + ", kd=" + String(robotSettings.kMotor.d) + "\n";
+        message += "Roll PID gains: kp=" + String(robotSettings.kRoll.p) + ", ki=" + String(robotSettings.kRoll.i) + ", kd=" + String(robotSettings.kRoll.d) + "\n";
+        message += "Min PWM: lmin=" + String(robotSettings.lmin) + ", rmin=" + String(robotSettings.rmin) + "\n";
+        message += "Motor alpha: " + String(robotSettings.motorAlpha) + "\n";
+        message += "Roll alpha: " + String(robotSettings.rollAlpha) + "\n";
         server.sendHeader("Access-Control-Allow-Origin", "*");
         server.send(200, "text/plain", message);
     });
@@ -153,19 +166,29 @@ void setup()
     server.on("/settings", HTTP_GET, [] {
         String message;
 
-        if (server.hasArg("p") && server.hasArg("i") && server.hasArg("d"))
+        if (server.hasArg("mp") && server.hasArg("mi") && server.hasArg("md"))
         {
-            const float p = server.arg("p").toFloat();
-            const float i = server.arg("i").toFloat();
-            const float d = server.arg("d").toFloat();
-            robotSettings.p = p;
-            robotSettings.i = i;
-            robotSettings.d = d;
+            const float p = server.arg("mp").toFloat();
+            const float i = server.arg("mi").toFloat();
+            const float d = server.arg("md").toFloat();
+            robotSettings.kMotor.p = p;
+            robotSettings.kMotor.i = i;
+            robotSettings.kMotor.d = d;
 
-            message += "PID gains set to: kp=" + String(p) + ", ki=" + String(i) + ", kd=" + String(d) + "\n";
+            message += "Motor PID gains set to: kp=" + String(p) + ", ki=" + String(i) + ", kd=" + String(d) + "\n";
         }
+        else if (server.hasArg("rp") && server.hasArg("ri") && server.hasArg("rd"))
+        {
+            const float p = server.arg("rp").toFloat();
+            const float i = server.arg("ri").toFloat();
+            const float d = server.arg("rd").toFloat();
+            robotSettings.kRoll.p = p;
+            robotSettings.kRoll.i = i;
+            robotSettings.kRoll.d = d;
 
-        if (server.hasArg("lmin") && server.hasArg("rmin"))
+            message += "Roll PID gains set to: kp=" + String(p) + ", ki=" + String(i) + ", kd=" + String(d) + "\n";
+        }
+        else if (server.hasArg("lmin") && server.hasArg("rmin"))
         {
             const int lmin = server.arg("lmin").toInt();
             const int rmin = server.arg("rmin").toInt();
@@ -174,21 +197,20 @@ void setup()
 
             message += "Min PWM set to: lmin=" + String(lmin) + ", rmin=" + String(rmin) + "\n";
         }
-
-        if (server.hasArg("setpoint"))
+        else if (server.hasArg("malpha") && server.hasArg("ralpha"))
         {
-            const float setpoint = server.arg("setpoint").toFloat();
-            robotSettings.setpoint = setpoint;
+            const float motorAlpha = server.arg("malpha").toFloat();
+            robotSettings.motorAlpha = motorAlpha;
 
-            message += "Setpoint set to: " + String(setpoint, 3) + "\n";
+            const float rollAlpha = server.arg("ralpha").toFloat();
+            robotSettings.rollAlpha = rollAlpha;
+
+            message += "Output alpha set to: " + String(motorAlpha) + "\n";
+            message += "Roll alpha set to: " + String(rollAlpha) + "\n";
         }
-
-        if (server.hasArg("alpha"))
+        else
         {
-            const float alpha = server.arg("alpha").toFloat();
-            robotSettings.alpha = alpha;
-
-            message += "Output alpha set to: " + String(alpha) + "\n";
+            message += "Invalid settings\n";
         }
 
         saveSettingsToFlash();
@@ -215,34 +237,30 @@ void loop()
     IMUData imuData = imu->getData();
     OrientationData orientationData = orientation->getData();
 
-    static float output = 0.f;
-    const float newOutput = controller->update(orientationData.roll, imuData.rollRate);
+    static float motorOutput = 0.f;
+    const float newMotorOutput = motorController->update(orientationData.roll, imuData.rollRate);
+    motorOutput = (1.f - robotSettings.motorAlpha) * motorOutput + robotSettings.motorAlpha * newMotorOutput;
 
-    output = robotSettings.alpha * output + (1.f - robotSettings.alpha) * newOutput;
+    constexpr float MAX_SETPOINT = 0.08f;
+    static float rollSetpoint = 0.f;
+    const float newRollSetpoint = MAX_SETPOINT * rollSetpointController->update(motorOutput, 0);
+    rollSetpoint = (1.f - robotSettings.rollAlpha) * rollSetpoint + robotSettings.rollAlpha * newRollSetpoint;
 
-    udp.beginPacket("192.168.1.189", 47269);
+    motorL->setSpeed(255 * motorOutput);
+    motorR->setSpeed(255 * motorOutput);
+
+    motorController->setSetpoint(rollSetpoint);
+
+    udp.beginPacket(IPAddress(192, 168, 1, 189), 47269);
     udp.printf(
-        // "ax:%f\n"
-        // "ay:%f\n"
-        // "az:%f\n"
-        // "pr:%f\n"
         "rr:%f\n"
-        // "yr:%f\n"
-        // "p:%f\n"
         "r:%f\n"
-        "o:%f\n",
-        // imuData.accelX,
-        // imuData.accelY,
-        // imuData.accelZ,
-        // imuData.pitchRate,
+        "pwm:%d\n"
+        "rollSetpoint:%f\n",
         imuData.rollRate,
-        // imuData.yawRate,
-        // orientationData.pitch,
         orientationData.roll,
-        255 * output
+        (int)(255.f * motorOutput),
+        rollSetpoint
     );
     udp.endPacket();
-
-    motorL->setSpeed(255 * output);
-    motorR->setSpeed(255 * output);
 }
