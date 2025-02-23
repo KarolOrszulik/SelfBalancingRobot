@@ -3,6 +3,7 @@
 #include <WiFiUdp.h>
 #include <WebServer.h>
 #include <ESPmDNS.h>
+#include <EEPROM.h>
 
 #include "secret_wifi.hpp"
 #include "pins.hpp"
@@ -26,17 +27,30 @@ static volatile bool shouldUpdate = false;
 static WebServer server(80);
 static WiFiUDP udp;
 
-static float outputAlpha = 0.9f;
+
+struct RobotSettings
+{
+    float p;
+    float i;
+    float d;
+    int lmin;
+    int rmin;
+    float setpoint;
+    float alpha;
+};
+
+static RobotSettings robotSettings;
+
 
 void createMotors()
 {
     motorL = new Motor_MinPWM(
         new Motor_3Pin(MOTOR_L_PINS.a, MOTOR_L_PINS.b, MOTOR_L_PINS.en),
-        80);
+        robotSettings.lmin);
     
     motorR = new Motor_MinPWM(
         new Motor_3Pin(MOTOR_R_PINS.a, MOTOR_R_PINS.b, MOTOR_R_PINS.en),
-        90);
+        robotSettings.rmin);
 }
 
 void createIMU()
@@ -65,13 +79,38 @@ void createUpdateInterrupt()
 
 void createController()
 {
-    controller = new PIDController(3.f, 0.4f, -0.4f);
-    controller->setSetpoint(-0.025f);
+    controller = new PIDController(robotSettings.p, robotSettings.i, robotSettings.d);
+    controller->setSetpoint(robotSettings.setpoint);
+}
+
+void loadSettingsFromFlash()
+{
+    EEPROM.begin(sizeof(RobotSettings));
+    EEPROM.get(0, robotSettings);
+    EEPROM.end();
+}
+
+void saveSettingsToFlash()
+{
+    EEPROM.begin(sizeof(RobotSettings));
+    EEPROM.put(0, robotSettings);
+    EEPROM.commit();
+    EEPROM.end();
+}
+
+void applyAllSettings()
+{
+    ((Motor_MinPWM*)motorL)->setMinPWM(robotSettings.lmin);
+    ((Motor_MinPWM*)motorR)->setMinPWM(robotSettings.rmin);
+    ((PIDController*)controller)->setGains(robotSettings.p, robotSettings.i, robotSettings.d);
+    ((PIDController*)controller)->setSetpoint(robotSettings.setpoint);
 }
 
 void setup()
 {
     Serial.begin(115200);
+
+    loadSettingsFromFlash();
 
     createMotors();
     createIMU();
@@ -91,15 +130,26 @@ void setup()
     if (!MDNS.begin("self-balancing-robot"))
     {
         Serial.println("Error setting up MDNS responder!");
-        while (1)
-        {
-            delay(1000);
-        }
     }
 
     server.on("/", HTTP_GET, [] {
         server.send(200, "text/plain", "Self Balancing Robot");
     });
+
+    server.on("/getSettings", HTTP_GET, [] {
+        String message =
+              "p=" + String(robotSettings.p) +
+            + "i=" + String(robotSettings.i) +
+            + "d=" + String(robotSettings.d) +
+            + "lmin=" + String(robotSettings.lmin) +
+            + "rmin=" + String(robotSettings.rmin) +
+            + "setpoint=" + String(robotSettings.setpoint) +
+            + "alpha=" + String(robotSettings.alpha);
+
+        server.sendHeader("Access-Control-Allow-Origin", "*");
+        server.send(200, "text/plain", message);
+    });
+
     server.on("/settings", HTTP_GET, [] {
         String message;
 
@@ -108,7 +158,9 @@ void setup()
             const float p = server.arg("p").toFloat();
             const float i = server.arg("i").toFloat();
             const float d = server.arg("d").toFloat();
-            ((PIDController*)controller)->setGains(p, i, d);
+            robotSettings.p = p;
+            robotSettings.i = i;
+            robotSettings.d = d;
 
             message += "PID gains set to: kp=" + String(p) + ", ki=" + String(i) + ", kd=" + String(d) + "\n";
         }
@@ -117,8 +169,8 @@ void setup()
         {
             const int lmin = server.arg("lmin").toInt();
             const int rmin = server.arg("rmin").toInt();
-            ((Motor_MinPWM*)motorL)->setMinPWM(lmin);
-            ((Motor_MinPWM*)motorR)->setMinPWM(rmin);
+            robotSettings.lmin = lmin;
+            robotSettings.rmin = rmin;
 
             message += "Min PWM set to: lmin=" + String(lmin) + ", rmin=" + String(rmin) + "\n";
         }
@@ -126,24 +178,26 @@ void setup()
         if (server.hasArg("setpoint"))
         {
             const float setpoint = server.arg("setpoint").toFloat();
-            controller->setSetpoint(setpoint);
+            robotSettings.setpoint = setpoint;
 
             message += "Setpoint set to: " + String(setpoint, 3) + "\n";
         }
 
         if (server.hasArg("alpha"))
         {
-            outputAlpha = server.arg("alpha").toFloat();
+            const float alpha = server.arg("alpha").toFloat();
+            robotSettings.alpha = alpha;
 
-            message += "Output alpha set to: " + String(outputAlpha) + "\n";
+            message += "Output alpha set to: " + String(alpha) + "\n";
         }
+
+        saveSettingsToFlash();
+        applyAllSettings();
 
         server.sendHeader("Access-Control-Allow-Origin", "*");
         server.send(200, "text/plain", message);
     });
     server.begin();
-
-    delay(2000);
 }
 
 void loop()
@@ -164,28 +218,28 @@ void loop()
     static float output = 0.f;
     const float newOutput = controller->update(orientationData.roll, imuData.rollRate);
 
-    output = outputAlpha * output + (1.f - outputAlpha) * newOutput;
+    output = robotSettings.alpha * output + (1.f - robotSettings.alpha) * newOutput;
 
     udp.beginPacket("192.168.1.189", 47269);
     udp.printf(
-        "ax:%f\n"
-        "ay:%f\n"
-        "az:%f\n"
-        "pr:%f\n"
+        // "ax:%f\n"
+        // "ay:%f\n"
+        // "az:%f\n"
+        // "pr:%f\n"
         "rr:%f\n"
-        "yr:%f\n"
-        "p:%f\n"
+        // "yr:%f\n"
+        // "p:%f\n"
         "r:%f\n"
         "o:%f\n",
-        imuData.accelX,
-        imuData.accelY,
-        imuData.accelZ,
-        imuData.pitchRate,
+        // imuData.accelX,
+        // imuData.accelY,
+        // imuData.accelZ,
+        // imuData.pitchRate,
         imuData.rollRate,
-        imuData.yawRate,
-        orientationData.pitch,
+        // imuData.yawRate,
+        // orientationData.pitch,
         orientationData.roll,
-        output
+        255 * output
     );
     udp.endPacket();
 

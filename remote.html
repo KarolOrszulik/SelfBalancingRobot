@@ -37,14 +37,14 @@
 
     <section>
         <h3>Setpoint</h3>
-        <p>Setpoint: <input type="number" id="setpoint" placeholder="setpoint" value="0" step="0.005"></p>
+        <p>Setpoint: <input type="number" id="setpoint" placeholder="setpoint" value="0" step="0.001"></p>
         <button onclick="sendSetpoint()">Send</button>
         <p>Current setpoint: <span id="currentSetpoint"></span></p>
     </section>
 
     <section>
         <h3>Output LPF</h3>
-        <p>Alpha: <input type="number" id="alpha" placeholder="alpha" value="0.9", step="0.05"></p>
+        <p>Alpha: <input type="number" id="alpha" placeholder="alpha" value="0.9", step="0.01"></p>
         <button onclick="sendAlpha()">Send</button>
         <p>Current alpha: <span id="currentAlpha"></span></p>
     </section>
